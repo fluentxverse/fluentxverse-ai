@@ -4,11 +4,11 @@ AI-powered news aggregation and article generation using **Mastra AI** framework
 
 ## Features
 
-- 🔍 **News Fetching**: Automatically fetch news from multiple sources (NewsAPI, GNews, Google News RSS)
-- ✍️ **Article Generation**: Create original articles from gathered news using AI
-- 📋 **News Summaries**: Generate quick news summaries on any topic
-- 🎯 **Structured Output**: Get articles with structured data (headlines, tags, sources)
-- 🔄 **Streaming**: Real-time article generation with streaming responses
+- **News Fetching**: Automatically fetch news from multiple sources (NewsAPI, GNews, Google News RSS)
+- **Article Generation**: Create original articles from gathered news using AI
+- **News Summaries**: Generate quick news summaries on any topic
+- **Structured Output**: Get articles with structured data (headlines, tags, sources)
+- **Streaming**: Real-time article generation with streaming responses
 
 ## Setup
 
