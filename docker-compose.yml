@@ -1,0 +1,273 @@
+services:
+  # ===========================================
+  # DISPATCH DAILY SERVICE (AI Lesson Generator)
+  # ===========================================
+  fluentxverse-dispatch:
+    build:
+      context: .
+      dockerfile: Dockerfile.dispatch
+    container_name: fluentxverse-dispatch
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      # Memgraph connection (using container name)
+      - MEMGRAPH_URI=bolt://fluentxverse-memgraph:7687
+      - MEMGRAPH_USER=${MEMGRAPH_USER:-fluentxverse}
+      - MEMGRAPH_PASSWORD=${MEMGRAPH_PASSWORD:-devpassword123}
+      # OpenAI API Key (required)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # News API Keys (optional)
+      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
+      - GNEWS_KEY=${GNEWS_KEY:-}
+    networks:
+      - fluentxverse-server_fluentxverse-network
+
+  # ===========================================
+  # MAIN BUN SERVER (API + WebSocket)
+  # ===========================================
+  fluentxverse-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fluentxverse-server
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8765}:8765"
+      - "${SOCKET_PORT:-8767}:8767"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      # Database connections (using container names)
+      - DATABASE_URL=postgres://${POSTGRES_USER:-fluentxverse_user}:${POSTGRES_PASSWORD:-fluentxverse_pass}@fluentxverse-postgres:5432/${POSTGRES_DB:-fluentxverse}
+      - MEMGRAPH_URI=bolt://fluentxverse-memgraph:7687
+      - MEMGRAPH_USER=${MEMGRAPH_USER:-fluentxverse}
+      - MEMGRAPH_PASSWORD=${MEMGRAPH_PASSWORD:-devpassword123}
+      - REDIS_URL=redis://fluentxverse-redis:6379
+      # SeaweedFS (internal only - not exposed publicly)
+      - SEAWEED_MASTER_URL=http://fluentxverse-seaweed-master:9333
+      - SEAWEED_FILER_URL=http://fluentxverse-seaweed-filer:8888
+      # API Public URL (for generating proxy URLs to lesson files)
+      - API_PUBLIC_URL=${API_PUBLIC_URL:-http://localhost:8765}
+      # Auth
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-change-me-refresh-secret}
+      - ACCESS_TOKEN_EXPIRY=${ACCESS_TOKEN_EXPIRY:-15m}
+      - REFRESH_TOKEN_EXPIRY=${REFRESH_TOKEN_EXPIRY:-7d}
+      # CORS
+      - FRONTEND_URLS=${FRONTEND_URLS:-http://localhost:5173,http://localhost:5174,http://localhost:5175,https://student.fluentxverse.xyz,https://tutor.fluentxverse.xyz,https://dashboard.fluentxverse.xyz}
+      # Notifications
+      - NOTIFICATION_RETENTION_DAYS=${NOTIFICATION_RETENTION_DAYS:-30}
+      # Thirdweb
+      - THIRDWEB_SECRET_KEY=${THIRDWEB_SECRET_KEY}
+      - THIRDWEB_CLIENT_ID=${THIRDWEB_CLIENT_ID}
+      - THIRDWEB_VAULT_WALLET_ADDRESS=${THIRDWEB_VAULT_WALLET_ADDRESS}
+      - THIRDWEB_VAULT_ACCESS_TOKEN=${THIRDWEB_VAULT_ACCESS_TOKEN}
+      - THIRDWEB_VAULT_ADMIN_KEY=${THIRDWEB_VAULT_ADMIN_KEY}
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Ticket Contract (optional)
+      - TICKET_CONTRACT_ADDRESS=${TICKET_CONTRACT_ADDRESS:-0x6fB1BbF7929AF18Dbd6f4F15b03307d067E838db}
+      - TICKET_CHAIN_ID=${TICKET_CHAIN_ID:-421614}
+    depends_on:
+      fluentxverse-postgres:
+        condition: service_healthy
+      fluentxverse-memgraph:
+        condition: service_started
+      fluentxverse-redis:
+        condition: service_healthy
+      fluentxverse-seaweed-filer:
+        condition: service_healthy
+    networks:
+      - fluentxverse-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ===========================================
+  # DATABASES & SERVICES
+  # ===========================================
+  fluentxverse-postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: fluentxverse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fluentxverse}
+      POSTGRES_USER: ${POSTGRES_USER:-fluentxverse_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fluentxverse_pass}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fluentxverse_user} -d ${POSTGRES_DB:-fluentxverse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fluentxverse-network
+
+  fluentxverse-memgraph:
+    image: docker.io/memgraph/memgraph-mage:latest
+    container_name: fluentxverse-memgraph
+    restart: unless-stopped
+    ports:
+      - "${MEMGRAPH_HTTP_PORT:-7444}:${MEMGRAPH_HTTP_PORT:-7444}"
+      - "${MEMGRAPH_BOLT_PORT:-7687}:${MEMGRAPH_BOLT_PORT:-7687}"
+    environment:
+      - MEMGRAPH_USER=${MEMGRAPH_USER}
+      - MEMGRAPH_PASSWORD=${MEMGRAPH_PASSWORD}
+    volumes:
+      - memgraph-data:/var/lib/memgraph
+      - memgraph-log:/var/log/memgraph
+    networks:
+      - fluentxverse-network
+
+  fluentxverse-redis:
+    image: docker.io/library/redis:7-alpine
+    container_name: fluentxverse-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "${REDIS_AOF:-yes}", "--port", "${REDIS_PORT:-6379}"]
+    networks:
+      - fluentxverse-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  fluentxverse-seaweed-master:
+    image: docker.io/chrislusf/seaweedfs:latest
+    container_name: fluentxverse-seaweed-master
+    command: "master -ip=fluentxverse-seaweed-master -mdir=/data"
+    restart: unless-stopped
+    ports:
+      - "${SEAWEED_MASTER_PORT:-9333}:${SEAWEED_MASTER_PORT:-9333}"
+    volumes:
+      - seaweed-master-data:/data
+    networks:
+      - fluentxverse-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9333/cluster/status || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  fluentxverse-seaweed-volume:
+    image: docker.io/chrislusf/seaweedfs:latest
+    container_name: fluentxverse-seaweed-volume
+    command: "volume -max=${SEAWEED_MAX_VOLUMES:-100} -mserver=fluentxverse-seaweed-master:${SEAWEED_MASTER_PORT:-9333} -ip=fluentxverse-seaweed-volume -dir=/data -port=8080"
+    restart: unless-stopped
+    ports:
+      - "${SEAWEED_VOLUME_ADMIN_PORT:-8080}:8080"
+      - "${SEAWEED_VOLUME_PUBLIC_PORT:-8081}:8081"
+    volumes:
+      - seaweed-volume-data:/data
+    depends_on:
+      fluentxverse-seaweed-master:
+        condition: service_healthy
+    networks:
+      - fluentxverse-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/status || curl -sf http://localhost:8080/status || exit 0"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  fluentxverse-seaweed-filer:
+    image: docker.io/chrislusf/seaweedfs:latest
+    container_name: fluentxverse-seaweed-filer
+    command: "filer -master=fluentxverse-seaweed-master:${SEAWEED_MASTER_PORT:-9333}"
+    restart: unless-stopped
+    ports:
+      - "${SEAWEED_FILER_PORT:-8888}:${SEAWEED_FILER_PORT:-8888}"
+      - "${SEAWEED_S3_PORT:-8333}:${SEAWEED_S3_PORT:-8333}"
+    volumes:
+      - seaweed-filer-data:/data
+    depends_on:
+      fluentxverse-seaweed-master:
+        condition: service_healthy
+      fluentxverse-seaweed-volume:
+        condition: service_started
+    networks:
+      - fluentxverse-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8888/ || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ===========================================
+  # FRONTEND APPS
+  # ===========================================
+  fluentxverse-student:
+    build:
+      context: ../fluentxverse-student
+      dockerfile: Dockerfile
+      args:
+        # Public HTTPS API origin (baked into the Vite build)
+        # IMPORTANT: Hardcoded to ensure consistent builds via webhook
+        VITE_API_URL: https://api.fluentxverse.xyz
+    container_name: fluentxverse-student
+    restart: unless-stopped
+    ports:
+      - "${STUDENT_PORT:-5173}:80"
+    depends_on:
+      - fluentxverse-server
+    networks:
+      - fluentxverse-network
+
+  fluentxverse-tutor:
+    build:
+      context: ../fluentxverse-tutor
+      dockerfile: Dockerfile
+      args:
+        # Public HTTPS API origin (baked into the Vite build)
+        # IMPORTANT: Hardcoded to ensure consistent builds via webhook
+        VITE_API_URL: https://api.fluentxverse.xyz
+    container_name: fluentxverse-tutor
+    restart: unless-stopped
+    ports:
+      - "${TUTOR_PORT:-5174}:80"
+    depends_on:
+      - fluentxverse-server
+    networks:
+      - fluentxverse-network
+
+  fluentxverse-dashboard:
+    build:
+      context: ../fluentxverse-dashboard
+      dockerfile: Dockerfile
+    container_name: fluentxverse-dashboard
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-5175}:80"
+    depends_on:
+      - fluentxverse-server
+    networks:
+      - fluentxverse-network
+
+volumes:
+  postgres-data:
+  redis-data:
+  memgraph-data:
+  memgraph-log:
+  seaweed-master-data:
+  seaweed-volume-data:
+  seaweed-filer-data:
+
+networks:
+  fluentxverse-network:
+    driver: bridge
+  fluentxverse-server_fluentxverse-network:
+    external: true

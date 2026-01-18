@@ -1,0 +1,34 @@
+{
+  "name": "fluentxverse-ai",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/dispatch.daily.services/dispatch.daily.service.ts",
+    "lesson": "bun run src/dispatch.daily.services/dispatch.daily.service.ts lesson",
+    "lesson:save": "bun run src/dispatch.daily.services/dispatch.daily.service.ts lesson-save",
+    "lesson:json": "bun run src/dispatch.daily.services/dispatch.daily.service.ts lesson-json",
+    "summary": "bun run src/dispatch.daily.services/dispatch.daily.service.ts summary",
+    "article": "bun run src/dispatch.daily.services/dispatch.daily.service.ts article",
+    "structured": "bun run src/dispatch.daily.services/dispatch.daily.service.ts structured",
+    "dispatch": "bun run src/dispatch.daily.services/dispatch.daily.service.ts dispatch",
+    "stream": "bun run src/dispatch.daily.services/dispatch.daily.service.ts stream",
+    "scheduler": "bun run src/dispatch.daily.services/lesson.scheduler.ts",
+    "scheduler:start": "bun run src/dispatch.daily.services/lesson.scheduler.ts start",
+    "scheduler:run-now": "bun run src/dispatch.daily.services/lesson.scheduler.ts run-now"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/uuid": "^11.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.12",
+    "@mastra/core": "^0.24.9",
+    "neo4j-driver": "^6.0.1",
+    "uuid": "^13.0.0",
+    "zod": "^4.3.5"
+  }
+}
